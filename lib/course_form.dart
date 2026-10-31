@@ -3,14 +3,6 @@ import 'package:flutter/material.dart';
 import 'schedule.dart';
 import 'times.dart';
 
-class FormResult {
-  const FormResult.saved(this.course) : deleted = false;
-  const FormResult.deleted() : course = null, deleted = true;
-
-  final Course? course;
-  final bool deleted;
-}
-
 class CourseFormScreen extends StatefulWidget {
   const CourseFormScreen({super.key, this.existing, required this.initialDay});
 
@@ -27,6 +19,7 @@ class _CourseFormScreenState extends State<CourseFormScreen> {
   late final TextEditingController _end;
   late Day _day;
   String? _error;
+  bool _busy = false;
 
   @override
   void initState() {
@@ -54,7 +47,7 @@ class _CourseFormScreenState extends State<CourseFormScreen> {
     if (_error != null) setState(() => _error = null);
   }
 
-  void _save() {
+  Future<void> _save() async {
     final error = validationError(_name.text, _start.text, _end.text);
     if (error != null) {
       setState(() => _error = error);
@@ -63,13 +56,30 @@ class _CourseFormScreenState extends State<CourseFormScreen> {
     final start = parseTime(_start.text) as TimeOk;
     final end = parseTime(_end.text) as TimeOk;
     final course = Course(
-      id: widget.existing?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
+      id: widget.existing?.id ?? '',
       name: _name.text.trim(),
       day: _day,
       startMinutes: start.minutes,
       endMinutes: end.minutes,
     );
-    Navigator.pop(context, FormResult.saved(course));
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      if (widget.existing == null) {
+        await myCourses().add(course.toMap());
+      } else {
+        await myCourses().doc(widget.existing!.id).update(course.toMap());
+      }
+      if (mounted) Navigator.pop(context, course.day);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = 'Could not save this course.\n$e');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _confirmDelete() async {
@@ -94,8 +104,22 @@ class _CourseFormScreenState extends State<CourseFormScreen> {
         );
       },
     );
-    if (yes == true && mounted) {
-      Navigator.pop(context, const FormResult.deleted());
+    if (yes != true || !mounted) return;
+    final existing = widget.existing;
+    if (existing == null) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await myCourses().doc(existing.id).delete();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = 'Could not delete this course.\n$e');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -174,11 +198,14 @@ class _CourseFormScreenState extends State<CourseFormScreen> {
             ),
           ],
           const SizedBox(height: 16),
-          FilledButton(onPressed: _save, child: const Text('Save')),
+          FilledButton(
+            onPressed: _busy ? null : _save,
+            child: const Text('Save'),
+          ),
           if (editing) ...[
             const SizedBox(height: 8),
             OutlinedButton.icon(
-              onPressed: _confirmDelete,
+              onPressed: _busy ? null : _confirmDelete,
               icon: const Icon(Icons.delete),
               label: const Text('Delete'),
               style: OutlinedButton.styleFrom(

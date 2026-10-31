@@ -1,3 +1,6 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 enum Day {
   monday('Monday', 'Mon'),
   tuesday('Tuesday', 'Tue'),
@@ -46,6 +49,34 @@ class Course {
       endMinutes: json['end'] as int,
     );
   }
+
+  /// Facts the user typed. Hours and clashes are calculated, never saved.
+  Map<String, dynamic> toMap() => {
+        'name': name,
+        'day': day.name,
+        'start': startMinutes,
+        'end': endMinutes,
+      };
+
+  factory Course.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data()!;
+    return Course(
+      id: doc.id,
+      name: data['name'] as String,
+      day: Day.values.byName(data['day'] as String),
+      startMinutes: (data['start'] as num).toInt(),
+      endMinutes: (data['end'] as num).toInt(),
+    );
+  }
+}
+
+/// The signed-in user's courses: users/{uid}/courses
+CollectionReference<Map<String, dynamic>> myCourses() {
+  final uid = FirebaseAuth.instance.currentUser!.uid;
+  return FirebaseFirestore.instance
+      .collection('users')
+      .doc(uid)
+      .collection('courses');
 }
 
 /// Two courses clash when they share a day and each one starts before the other ends.
